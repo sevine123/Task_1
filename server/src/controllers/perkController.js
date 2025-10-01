@@ -70,7 +70,56 @@ export async function createPerk(req, res, next) {
 // TODO
 // Update an existing perk by ID and validate only the fields that are being updated 
 export async function updatePerk(req, res, next) {
-  
+ 
+   try {
+    const { id } = req.params;
+    // Destructure ONLY the title from the request body
+    const { title } = req.body;
+
+    // 1. Check if the title was provided at all in the request body
+    if (title === undefined) {
+      return res.status(400).json({ message: 'Title field is required for this update endpoint.' });
+    }
+
+    // 2. Define a Joi schema specifically for validating ONLY the title field
+    const updatePayloadSchema = Joi.object({
+      // Extracts the title validation rules (min(2).required()) from the main schema
+      title: perkSchema.extract('title'), 
+    }).unknown(false); // Disallow any other fields
+
+    // 3. Prepare the update object and validate it
+    const update = { title }; // Update object contains only the title
+
+    // Validate the provided title against the specific update schema
+    const { value: validatedUpdate, error } = updatePayloadSchema.validate(update);
+    
+    if (error) {
+      // If validation fails (e.g., title is too short)
+      return res.status(400).json({ message: error.message });
+    }
+
+    // 4. Find and update the perk using $set
+    // $set ensures ONLY the fields in 'validatedUpdate' (which is just the title) are changed, 
+    // preserving all other fields (description, category, etc.) in the database document.
+    const doc = await Perk.findByIdAndUpdate(
+      id,
+      { $set: validatedUpdate }, 
+      { new: true, runValidators: true } // {new: true} returns the updated document
+    );
+
+    if (!doc) {
+      return res.status(404).json({ message: 'Perk not found' });
+    }
+
+    res.status(200).json({ perk: doc });
+
+  } catch (err) {
+    // Handle duplicate key error (if the new title violates a unique index)
+    if (err.code === 11000) {
+      return res.status(409).json({ message: 'Duplicate title already exists' });
+    }
+    next(err);
+  }
 }
 
 
